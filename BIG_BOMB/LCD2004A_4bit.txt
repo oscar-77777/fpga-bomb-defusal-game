@@ -1,0 +1,246 @@
+// ============================================================
+// LCD2004A Driver (HD44780 compatible, 4-bit interface)
+// - Display serial number (6 ASCII chars)
+// - Show on 2nd line, right aligned (20 columns)
+// ============================================================
+
+module LCD2004A #(
+    parameter integer CLK_HZ = 50_000_000
+)(
+    input  wire        clk,
+    input  wire        rst,          // active-low reset
+    input  wire [2:0]  current_state,
+    input  wire [47:0] serial_number,// 6 bytes ASCII: [47:40]..[7:0]
+    input  wire        serial_done,  // serial ready flag (can stay high)
+
+    output reg         lcd_rs,        // 0=command, 1=data
+    output reg         lcd_rw,        // always 0 (write)
+    output reg         lcd_en,        // enable pulse
+    output reg  [3:0]  lcd_data       // 4-bit data bus
+);
+
+    // ============================================================
+    // 1us tick generator (for HD44780 timing)
+    // ============================================================
+    localparam integer US_DIV = (CLK_HZ / 1_000_000);
+    reg [$clog2(US_DIV)-1:0] us_div_cnt;
+    reg                      us_tick;
+
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            us_div_cnt <= 0;
+            us_tick    <= 1'b0;
+        end else begin
+            if (us_div_cnt == US_DIV-1) begin
+                us_div_cnt <= 0;
+                us_tick    <= 1'b1;
+            end else begin
+                us_div_cnt <= us_div_cnt + 1'b1;
+                us_tick    <= 1'b0;
+            end
+        end
+    end
+
+    // ============================================================
+    // Low-level 4-bit send engine
+    // - Sends 1 byte as high nibble + low nibble
+    // - EN pulse width is conservatively long
+    // ============================================================
+    localparam S_IDLE      = 4'd0;
+    localparam S_EN_HI     = 4'd1;
+    localparam S_EN_LO     = 4'd2;
+    localparam S_EN2_HI    = 4'd3;
+    localparam S_EN2_LO    = 4'd4;
+    localparam S_WAIT_DONE= 4'd5;
+
+    reg [3:0]  send_state;
+    reg [15:0] wait_us;
+    reg [7:0]  send_byte;
+    reg        send_is_data;
+    reg        send_req;
+    reg        send_busy;
+    reg        send_done;
+
+    localparam integer PULSE_US = 2; // EN pulse width (safe)
+
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            lcd_rs     <= 1'b0;
+            lcd_rw     <= 1'b0;
+            lcd_en     <= 1'b0;
+            lcd_data   <= 4'h0;
+
+            send_state <= S_IDLE;
+            send_busy  <= 1'b0;
+            send_done  <= 1'b0;
+            wait_us    <= 16'd0;
+        end else begin
+            send_done <= 1'b0;
+
+            case (send_state)
+                S_IDLE: begin
+                    lcd_en <= 1'b0;
+                    if (send_req) begin
+                        send_busy <= 1'b1;
+                        lcd_rs    <= send_is_data;
+                        lcd_rw    <= 1'b0;
+                        lcd_data  <= send_byte[7:4]; // high nibble
+                        wait_us   <= PULSE_US;
+                        send_state<= S_EN_HI;
+                    end else begin
+                        send_busy <= 1'b0;
+                    end
+                end
+
+                S_EN_HI: if (us_tick && wait_us==0) begin
+                    lcd_en <= 1'b1;
+                    wait_us<= PULSE_US;
+                    send_state <= S_EN_LO;
+                end else if (us_tick) wait_us <= wait_us - 1'b1;
+
+                S_EN_LO: if (us_tick && wait_us==0) begin
+                    lcd_en   <= 1'b0;
+                    lcd_data <= send_byte[3:0]; // low nibble
+                    wait_us  <= PULSE_US;
+                    send_state <= S_EN2_HI;
+                end else if (us_tick) wait_us <= wait_us - 1'b1;
+
+                S_EN2_HI: if (us_tick && wait_us==0) begin
+                    lcd_en <= 1'b1;
+                    wait_us<= PULSE_US;
+                    send_state <= S_EN2_LO;
+                end else if (us_tick) wait_us <= wait_us - 1'b1;
+
+                S_EN2_LO: if (us_tick && wait_us==0) begin
+                    lcd_en   <= 1'b0;
+                    send_done<= 1'b1;
+                    send_state <= S_WAIT_DONE;
+                end else if (us_tick) wait_us <= wait_us - 1'b1;
+
+                S_WAIT_DONE: if (!send_req) send_state <= S_IDLE;
+                default: send_state <= S_IDLE;
+            endcase
+        end
+    end
+
+    // ============================================================
+    // High-level FSM: LCD init + print serial number
+    // ============================================================
+    localparam I_BOOT_WAIT    = 5'd0;
+    localparam I_INIT_33      = 5'd1;
+    localparam I_INIT_32      = 5'd2;
+    localparam I_FUNC_SET    = 5'd3;
+    localparam I_DISP_ON     = 5'd4;
+    localparam I_ENTRY_MODE  = 5'd5;
+    localparam I_CLEAR       = 5'd6;
+    localparam I_READY       = 5'd7;
+    localparam I_SET_ADDR    = 5'd8;
+    localparam I_WRITE_0     = 5'd9;
+    localparam I_WRITE_1     = 5'd10;
+    localparam I_WRITE_2     = 5'd11;
+    localparam I_WRITE_3     = 5'd12;
+    localparam I_WRITE_4     = 5'd13;
+    localparam I_WRITE_5     = 5'd14;
+    localparam I_DONE        = 5'd15;
+
+    reg [4:0]  st;
+    reg [31:0] delay_us;
+    reg [47:0] serial_latched;
+    reg        printed;
+
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            st       <= I_BOOT_WAIT;
+            delay_us<= 32'd20000; // 20ms power-up wait
+            send_req<= 1'b0;
+            send_is_data <= 1'b0;
+            send_byte <= 8'h00;
+            printed <= 1'b0;
+            serial_latched <= 48'h303030303030;
+        end else begin
+            if (send_done) send_req <= 1'b0;
+
+            case (st)
+                I_BOOT_WAIT:
+                    if (us_tick && delay_us==0) st <= I_INIT_33;
+                    else if (us_tick) delay_us <= delay_us - 1'b1;
+
+                I_INIT_33: begin
+                    send_is_data <= 1'b0;
+                    send_byte    <= 8'h33;
+                    send_req     <= 1'b1;
+                    if (send_done) st <= I_INIT_32;
+                end
+
+                I_INIT_32: begin
+                    send_is_data <= 1'b0;
+                    send_byte    <= 8'h32;
+                    send_req     <= 1'b1;
+                    if (send_done) st <= I_FUNC_SET;
+                end
+
+                I_FUNC_SET: begin
+                    send_is_data <= 1'b0;
+                    send_byte    <= 8'h28; // 4-bit, 2-line, 5x8
+                    send_req     <= 1'b1;
+                    if (send_done) st <= I_DISP_ON;
+                end
+
+                I_DISP_ON: begin
+                    send_is_data <= 1'b0;
+                    send_byte    <= 8'h0C; // display ON
+                    send_req     <= 1'b1;
+                    if (send_done) st <= I_ENTRY_MODE;
+                end
+
+                I_ENTRY_MODE: begin
+                    send_is_data <= 1'b0;
+                    send_byte    <= 8'h06;
+                    send_req     <= 1'b1;
+                    if (send_done) st <= I_CLEAR;
+                end
+
+                I_CLEAR: begin
+                    send_is_data <= 1'b0;
+                    send_byte    <= 8'h01;
+                    send_req     <= 1'b1;
+                    if (send_done) st <= I_READY;
+                end
+
+                I_READY: begin
+                    if (!printed && serial_done) begin
+                        serial_latched <= serial_number;
+                        st <= I_SET_ADDR;
+                    end
+                end
+
+                // LCD2004A: 2nd line base = 0x40
+                // Right aligned for 6 chars on 20 columns:
+                // start_col = 20 - 6 = 14
+                // addr = 0x40 + 14 = 0x4E → cmd = 0xCE
+                I_SET_ADDR: begin
+                    send_is_data <= 1'b0;
+                    send_byte    <= 8'hCE;
+                    send_req     <= 1'b1;
+                    if (send_done) st <= I_WRITE_0;
+                end
+
+                I_WRITE_0: begin send_is_data<=1; send_byte<=serial_latched[47:40]; send_req<=1; if(send_done) st<=I_WRITE_1; end
+                I_WRITE_1: begin send_is_data<=1; send_byte<=serial_latched[39:32]; send_req<=1; if(send_done) st<=I_WRITE_2; end
+                I_WRITE_2: begin send_is_data<=1; send_byte<=serial_latched[31:24]; send_req<=1; if(send_done) st<=I_WRITE_3; end
+                I_WRITE_3: begin send_is_data<=1; send_byte<=serial_latched[23:16]; send_req<=1; if(send_done) st<=I_WRITE_4; end
+                I_WRITE_4: begin send_is_data<=1; send_byte<=serial_latched[15:8];  send_req<=1; if(send_done) st<=I_WRITE_5; end
+                I_WRITE_5: begin
+                    send_is_data<=1;
+                    send_byte<=serial_latched[7:0];
+                    send_req<=1;
+                    if(send_done) begin printed<=1'b1; st<=I_DONE; end
+                end
+
+                I_DONE: ; // hold display
+                default: st <= I_BOOT_WAIT;
+            endcase
+        end
+    end
+
+endmodule
