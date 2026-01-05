@@ -1,0 +1,393 @@
+{
+	"partitions" : [
+		{
+			"name" : "Top",
+			"pins" : [
+				{
+					"name" : "T_HEX0[0]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX0[1]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX0[2]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX0[3]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX0[4]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX0[5]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX0[6]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX1[0]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX1[1]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX1[2]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX1[3]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX1[4]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX1[5]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX1[6]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX2[0]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX2[1]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX2[2]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX2[3]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX2[4]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX2[5]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX2[6]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX3[0]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX3[1]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX3[2]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX3[3]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX3[4]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX3[5]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX3[6]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX4[0]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX4[1]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX4[2]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX4[3]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX4[4]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX4[5]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX4[6]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX5[0]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX5[1]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX5[2]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX5[3]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX5[4]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX5[5]",
+					"strict" : false
+				},
+				{
+					"name" : "T_HEX5[6]",
+					"strict" : false
+				},
+				{
+					"name" : "tm1367_clk",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_1602a_rs_w",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_1602a_en_w",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_1602a_data_w[0]",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_1602a_data_w[1]",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_1602a_data_w[2]",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_1602a_data_w[3]",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_2004a_rs_w",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_2004a_en_w",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_2004a_data_w[0]",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_2004a_data_w[1]",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_2004a_data_w[2]",
+					"strict" : false
+				},
+				{
+					"name" : "lcd_2004a_data_w[3]",
+					"strict" : false
+				},
+				{
+					"name" : "maze_dout",
+					"strict" : false
+				},
+				{
+					"name" : "btn1",
+					"strict" : false
+				},
+				{
+					"name" : "btn2",
+					"strict" : false
+				},
+				{
+					"name" : "btn3",
+					"strict" : false
+				},
+				{
+					"name" : "btn4",
+					"strict" : false
+				},
+				{
+					"name" : "buzzer_out",
+					"strict" : false
+				},
+				{
+					"name" : "mem_finished_LED",
+					"strict" : false
+				},
+				{
+					"name" : "wires_finished_LED",
+					"strict" : false
+				},
+				{
+					"name" : "morse_finished_LED",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_finished_LED",
+					"strict" : false
+				},
+				{
+					"name" : "maze_finished_LED",
+					"strict" : false
+				},
+				{
+					"name" : "tm1367_dio",
+					"strict" : false
+				},
+				{
+					"name" : "clk",
+					"strict" : false
+				},
+				{
+					"name" : "rst",
+					"strict" : false
+				},
+				{
+					"name" : "time_limit_1",
+					"strict" : false
+				},
+				{
+					"name" : "time_limit_0",
+					"strict" : false
+				},
+				{
+					"name" : "adc_clk",
+					"strict" : false
+				},
+				{
+					"name" : "activate",
+					"strict" : false
+				},
+				{
+					"name" : "chance_limit_1",
+					"strict" : false
+				},
+				{
+					"name" : "chance_limit_0",
+					"strict" : false
+				},
+				{
+					"name" : "mem_btn_1",
+					"strict" : false
+				},
+				{
+					"name" : "mem_btn_3",
+					"strict" : false
+				},
+				{
+					"name" : "mem_btn_4",
+					"strict" : false
+				},
+				{
+					"name" : "mem_btn_2",
+					"strict" : false
+				},
+				{
+					"name" : "wires_num[0]",
+					"strict" : false
+				},
+				{
+					"name" : "wires_num[1]",
+					"strict" : false
+				},
+				{
+					"name" : "wires_num[2]",
+					"strict" : false
+				},
+				{
+					"name" : "wires_num[3]",
+					"strict" : false
+				},
+				{
+					"name" : "wires_num[4]",
+					"strict" : false
+				},
+				{
+					"name" : "wires_num[5]",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_submit",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_up_0",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_down_0",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_up_1",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_down_1",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_up_2",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_down_2",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_up_3",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_down_3",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_up_4",
+					"strict" : false
+				},
+				{
+					"name" : "pwd_btn_down_4",
+					"strict" : false
+				}
+			]
+		}
+	]
+}

@@ -1,0 +1,20 @@
+-- begin_signature
+-- Mazes
+-- end_signature
+WIDTH=6;
+DEPTH=9;
+
+ADDRESS_RADIX=UNS;
+DATA_RADIX=BIN;
+
+CONTENT BEGIN
+	8 :	101001;
+	7 :	001100;
+	6 :	001010;
+	5 :	101011;
+	4 :	110100;
+	3 :	001001;
+	2 :	100100;
+	1 :	100010;
+	0 :	010001;
+END;

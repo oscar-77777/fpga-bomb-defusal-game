@@ -1,0 +1,70 @@
+`include "free_counter.v"
+`include "FSM.v"
+`include "Center_Timmer.v"
+module top_module ( 
+    input clk , 
+    input rst ,
+    input ativate 
+); 
+//==============================================================
+//Controler
+//==============================================================
+    //==============================================================
+    //FSM
+    //==============================================================
+    wire [2:0] current_state ;
+    FSM FSM 
+    (
+        .clk(clk) , 
+        .rst(rst) ,
+        .activate(activate) ,
+        .current_state(current_state)
+    );
+//==============================================================
+//Timming
+//==============================================================
+    //==============================================================
+    //center_timmer
+    //==============================================================
+    wire [3:0] time_left_minute_tens;
+    wire [3:0] time_left_minute_ones;
+
+    wire [3:0] time_left_sec_tens;
+    wire [3:0] time_left_sec_ones;
+
+    wire [3:0] time_left_micro_sec_tens;
+    wire [3:0] time_left_micro_sec_ones;
+
+    Center_Timmer Center_Timmer_u (
+        .clk(clk),
+        .rst(rst),
+        .current_state(current_state),
+
+        .time_left_minute_tens(time_left_minute_tens),
+        .time_left_minute_ones(time_left_minute_ones),
+
+        .time_left_sec_tens(time_left_sec_tens),
+        .time_left_sec_ones(time_left_sec_ones),
+
+        .time_left_micro_sec_tens(time_left_micro_sec_tens),
+        .time_left_micro_sec_ones(time_left_micro_sec_ones)
+    );
+    //==============================================================
+    //Seven_desplay
+    //==============================================================
+
+//==============================================================
+//generate_Serial_Number
+//==============================================================
+    //==============================================================
+    //free_counter
+    //==============================================================
+        wire [31:0] free_cnt ;
+        free_counter fc_1 
+        (
+            .clk(clk) , 
+            .rst(rst) ,
+            .free_cnt(free_cnt)
+        );
+
+endmodule

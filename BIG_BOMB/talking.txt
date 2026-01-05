@@ -1,0 +1,56 @@
+module talking(
+    input               rst,
+    input               clk,
+    input               tick_1sec,
+    input  [31:0]       rnd,
+    input  [2:0]        current_state ,
+    input               ten_sec_left ,
+    input               one_min_left ,
+    input               Wires_mistake ,
+    input               Memorys_mistake ,
+    input               Mos_Code_mistake ,
+    input               Maze_mistake ,
+    input               Passwords_mistake ,
+    input   [2:0]       text,
+    output reg [479:0]  msg          // 60 ASCII chars
+);
+//==============================================================
+// center_controller_state_define
+//==============================================================
+    parameter IDLE              = 3'b000;
+    parameter ACTIVATING        = 3'b001;
+    parameter ACTIVATED         = 3'b010;
+    parameter DETONATING        = 3'b011;
+    parameter MISSION_FAILED    = 3'b100;
+    parameter MISSION_SUCCESSED = 3'b101;
+    // 60 spaces
+    localparam [479:0] PAD60 = {60{8'h20}};
+
+    // 0~9 -> '0'..'9'
+    function automatic [7:0] digit_to_ascii(input [3:0] d);
+        begin
+            if (d <= 4'd9) digit_to_ascii = 8'h30 + d;  // '0' + d
+            else           digit_to_ascii = 8'h3F;      // '?' for invalid
+        end
+    endfunction
+
+    // Pack "prefix + 1 digit" into 60 chars, rest spaces
+    // 例: "TEXT=5"
+    reg [7:0] c0;
+
+    always @(*) begin
+        c0 = digit_to_ascii({1'b0, text}); // text(3-bit) 擴成 4-bit
+
+        msg = PAD60;
+        // 把字串放在左邊（高位）: msg[479:472] 是第 1 個字元
+        msg[479:472] = "T";
+        msg[471:464] = "E";
+        msg[463:456] = "X";
+        msg[455:448] = "T";
+        msg[447:440] = "=";
+        msg[439:432] = c0;     // 你的 text 數字字元
+        // 後面保持空白
+    end
+
+endmodule
+

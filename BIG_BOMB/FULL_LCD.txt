@@ -1,0 +1,489 @@
+// ============================================================
+// LCD2004A Driver (HD44780 compatible, 8-bit interface)
+// - Display serial number (6 ASCII chars)
+// - Show on 2nd line, right aligned (20 columns)
+// - No busy-flag read (RW can be tied to GND, but we still output lcd_rw=0)
+// ============================================================
+
+module LCD2004A #(
+    parameter integer CLK_HZ = 50_000_000
+)(
+    input  wire        clk,
+    input  wire        rst,            // active-low reset
+    input  wire [2:0]  current_state,  // (目前未使用，保留給你後續擴充)
+//==============================================================
+// 顯示序號
+//==============================================================
+    input  wire [47:0] serial_number,  // 6 bytes ASCII: [47:40]..[7:0]
+    input  wire        serial_done,    // serial ready flag (can stay high)
+//==============================================================
+// 顯示密碼
+//==============================================================
+
+//==============================================================
+// 顯示頻率
+//==============================================================
+
+//==============================================================
+// LCD接腳
+//==============================================================
+    output reg         lcd_rs,         // 0=command, 1=data
+    // output reg         lcd_rw,         // always 0 (write) gnd
+    output reg         lcd_en,         // enable pulse
+    output reg  [7:0]  lcd_data,        // 8-bit data bus (D0..D7)
+//==============================================================
+// 控制訊號
+//==============================================================
+    output reg         activated
+);
+//==============================================================
+// center_controller_state_define
+//==============================================================
+    parameter IDLE             = 3'b000;
+    parameter ATIVATING        = 3'b001; // 你原本拼法：ATIVATING
+    parameter ATIVATED         = 3'b010;
+    parameter DETONATING       = 3'b011;
+    parameter MISSION_FAILED   = 3'b100;
+    parameter MISSION_SUCCESSED= 3'b101;
+//==============================================================
+// DEBUG
+//==============================================================
+    parameter CHECK_DATA       = 8'b1010_1010;
+
+
+// ============================================================
+// 1us tick generator (for HD44780 timing)
+// ============================================================
+    localparam integer US_DIV = (CLK_HZ / 1_000_000);
+    reg [$clog2(US_DIV)-1:0] clk_cnt;
+    reg                      tick_1us;
+
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            clk_cnt <= 0;
+            tick_1us    <= 1'b0;
+        end else begin
+            if (clk_cnt == US_DIV-1) begin
+                clk_cnt <= 0;
+                tick_1us    <= 1'b1;
+            end else begin
+                clk_cnt <= clk_cnt + 1'b1;
+                tick_1us    <= 1'b0;
+            end
+        end
+    end
+
+// ============================================================
+// Low-level 8-bit send engine
+// - Sends 1 byte with a single EN pulse
+// - Does not read busy-flag; upper FSM ensures enough delay
+//
+// Usage:
+//   set send_is_data, send_byte, send_wait_us; then assert send_req
+//   wait send_done; then deassert send_req (auto handled by top FSM)
+// ============================================================
+    localparam S_IDLE       = 3'd0;
+    localparam S_SETUP      = 3'd1;
+    localparam S_EN_HI      = 3'd2;
+    localparam S_EN_LO      = 3'd3;
+    localparam S_POST_WAIT  = 3'd4;
+    localparam S_WAIT_DONE  = 3'd5;
+
+    reg [2:0]  send_state;
+    reg [15:0] wait_us;
+
+    reg [7:0]  send_byte;
+    reg        send_is_data;
+    reg        send_req;
+    reg        send_busy;
+    reg        send_done;
+
+    // EN pulse widths (HD44780 needs >= 450ns high; we use 2us safe)
+    localparam integer EN_PULSE_US = 2;
+
+    // post write wait time:
+    // - normal cmd/data: >= 37us
+    // - clear/home: >= 1520us
+    // 由上層用 send_wait_us 指定
+    reg [15:0] send_wait_us;
+
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            lcd_rs     <= 1'b0;
+            lcd_en     <= 1'b0;
+            //lcd_data   <= 8'h00;
+            lcd_data   <= CHECK_DATA;
+
+            send_state <= S_IDLE;
+            send_busy  <= 1'b0;
+            send_done  <= 1'b0;
+            wait_us    <= 16'd0;
+        end else begin
+            send_done <= 1'b0;
+
+            case (send_state)
+            //等待送資料
+                S_IDLE: begin 
+                    lcd_en <= 1'b0;
+                    if (send_req) begin
+                        send_busy <= 1'b1;
+
+                        // setup bus
+                        lcd_rs   <= send_is_data;
+                        lcd_data <= send_byte;   // 8-bit data on bus
+
+                        wait_us    <= 16'd1;     // small setup gap (1us safe)
+                        send_state <= S_EN_HI;
+                    end else begin
+                        send_busy <= 1'b0;
+                    end
+                end
+            //拉高EN
+                S_EN_HI: begin
+                    if (tick_1us) begin
+                        if (wait_us != 0) begin
+                            wait_us <= wait_us - 1'b1;
+                        end else begin
+                            lcd_en   <= 1'b1;
+                            wait_us  <= EN_PULSE_US;
+                            send_state <= S_EN_LO;
+                        end
+                    end
+                end
+
+            //拉低EN
+                S_EN_LO: begin
+                    if (tick_1us) begin
+                        if (wait_us != 0) begin
+                            wait_us <= wait_us - 1'b1;
+                        end else begin
+                            lcd_en   <= 1'b0;
+                            wait_us  <= send_wait_us; // post delay depends on cmd
+                            send_state <= S_POST_WAIT;
+                        end
+                    end
+                end
+
+            //等待LCD處裡
+                S_POST_WAIT: begin
+                    if (tick_1us) begin
+                        if (wait_us != 0) begin
+                            wait_us <= wait_us - 1'b1;
+                        end else begin
+                            send_done  <= 1'b1;
+                            send_state <= S_WAIT_DONE;
+                        end
+                    end
+                end
+
+            //wait upper FSM deassert send_req to avoid re-trigger
+                S_WAIT_DONE: begin
+                    if (!send_req) send_state <= S_IDLE;
+                end
+
+                default: send_state <= S_IDLE;
+            endcase
+        end
+    end
+
+// ============================================================
+// High-level FSM: LCD init + print serial number
+// ============================================================
+    localparam I_BOOT_WAIT      = 5'd0;
+    localparam I_FUNC_SET_8     = 5'd1;  // 0x38
+    localparam I_DISP_ON        = 5'd2;  // 0x0C
+    localparam I_ENTRY_MODE     = 5'd3;  // 0x06
+    localparam I_CLEAR          = 5'd4;  // 0x01
+    localparam I_CLEAR_WAIT     = 5'd5;  // wait >1.52ms
+    localparam I_READY          = 5'd6;
+    localparam I_SET_ADDR_L2R   = 5'd7;
+    localparam I_WRITE_0        = 5'd8;
+    localparam I_WRITE_1        = 5'd9;
+    localparam I_WRITE_2        = 5'd10;
+    localparam I_WRITE_3        = 5'd11;
+    localparam I_WRITE_4        = 5'd12;
+    localparam I_WRITE_5        = 5'd13;
+    localparam I_INTIALIZE_DONE = 5'd14;
+
+    reg [4:0]  lcd_operate;
+    reg [31:0] delay_us;
+
+    reg [47:0] serial_latched;
+    reg        printed;
+
+    // timing helpers
+    localparam [15:0] WAIT_CMD_US   = 16'd50;    // normal cmd/data wait (>=37us)
+    localparam [15:0] WAIT_CLEAR_US = 16'd2000;  // clear/home wait (>=1520us)
+// ============================================================
+// LCD_controll
+// ============================================================
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            lcd_operate              <= I_BOOT_WAIT;
+            delay_us        <= 32'd20000; // 20ms power-up wait
+
+            send_req        <= 1'b0;
+            send_wait_us    <= WAIT_CMD_US;
+
+            printed         <= 1'b0;
+
+            activated <= 1'b0;
+
+        end else begin
+        //延時
+            if (tick_1us) begin
+                if (delay_us != 0) begin
+                    delay_us <= delay_us - 1'b1;
+                end else begin 
+                    delay_us <= delay_us;
+                end
+            end
+        // default: drop request after engine completes one send
+            if (send_done) send_req <= 1'b0;
+        //指令呼叫
+            case (current_state)
+                ATIVATING: begin
+                    case (lcd_operate)
+                        // Power-up wait
+                        I_BOOT_WAIT: begin
+                            if (delay_us == 0) begin
+                                lcd_operate <= I_FUNC_SET_8;
+                            end else begin
+                                lcd_operate <= lcd_operate;
+                            end
+                        end
+                        // Function set: 8-bit, 2-line, 5x8
+                        I_FUNC_SET_8: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_DISP_ON;
+                        end
+
+                        // Display ON, cursor OFF, blink OFF
+                        I_DISP_ON: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_ENTRY_MODE;
+                        end
+
+                        // Entry mode: increment, no shift
+                        I_ENTRY_MODE: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_CLEAR;
+                        end
+
+                        // Clear display (needs long wait)
+                        I_CLEAR: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CLEAR_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_READY;
+                        end
+
+                        // Wait for serial ready, latch once, then print
+                        I_READY: begin
+                            if (!printed && serial_done) begin
+                                lcd_operate <= I_SET_ADDR_L2R;
+                            end
+                        end
+                        // LCD2004A: 2nd line base addr = 0x40
+                        // Right aligned for 6 chars on 20 columns:
+                        // start_col = 20 - 6 = 14
+                        // addr = 0x40 + 14 = 0x4E → cmd = 0x80 | 0x4E = 0xCE
+                        I_SET_ADDR_L2R: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_WRITE_0;
+                        end
+
+                        // write 6 ASCII chars into DDRAM
+                        I_WRITE_0: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_WRITE_1;
+                        end
+
+                        I_WRITE_1: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_WRITE_2;
+                        end
+
+                        I_WRITE_2: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_WRITE_3;
+                        end
+
+                        I_WRITE_3: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_WRITE_4;
+                        end
+
+                        I_WRITE_4: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) lcd_operate <= I_WRITE_5;
+                        end
+
+                        I_WRITE_5: begin
+                            if (!send_busy && !send_req) begin
+                                send_wait_us <= WAIT_CMD_US;
+                                send_req     <= 1'b1;
+                            end
+                            if (send_done) begin
+                                printed <= 1'b1;
+                                lcd_operate <= I_INTIALIZE_DONE;
+                            end
+                        end
+
+                        I_INTIALIZE_DONE: begin
+                            activated <= 1'b1;
+                        end
+
+                        default: begin
+                            lcd_operate <= I_BOOT_WAIT;
+                        end
+
+                    endcase
+                end
+                default: begin
+                                    
+                end
+            endcase
+        end
+    end
+// ============================================================
+// LCD_data
+// ============================================================
+    always @(posedge clk or negedge rst) begin
+        if (!rst) begin
+            send_is_data    <= 1'b0;
+            send_byte       <= 8'h00;
+            serial_latched  <= 48'h303030303030;
+        end else begin
+            case (lcd_operate)
+                        
+                        // Function set: 8-bit, 2-line, 5x8
+                        I_FUNC_SET_8: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b0;
+                                send_byte    <= 8'h38;
+                            end
+                        end
+
+                        // Display ON, cursor OFF, blink OFF
+                        I_DISP_ON: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b0;
+                                // send_byte    <= 8'h0C;
+                                send_byte <= 8'h0F; //debug
+                            end
+                        end
+
+                        // Entry mode: increment, no shift
+                        I_ENTRY_MODE: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b0;
+                                send_byte    <= 8'h06;
+                            end
+                        end
+
+                        // Clear display (needs long wait)
+                        I_CLEAR: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b0;
+                                send_byte    <= 8'h01;
+                            end
+                        end
+
+                        // Wait for serial ready, latch once, then print
+                        I_READY: begin
+                            if (!printed && serial_done) begin
+                                serial_latched <= serial_number;
+                            end
+                        end
+                        // LCD2004A: 2nd line base addr = 0x40
+                        // Right aligned for 6 chars on 20 columns:
+                        // start_col = 20 - 6 = 14
+                        // addr = 0x40 + 14 = 0x4E → cmd = 0x80 | 0x4E = 0xCE
+                        I_SET_ADDR_L2R: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b0;
+                                send_byte    <= 8'hCE;
+                            end
+                        end
+
+                        // write 6 ASCII chars into DDRAM
+                        I_WRITE_0: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b1;
+                                send_byte    <= serial_latched[47:40];
+                            end
+                        end
+
+                        I_WRITE_1: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b1;
+                                send_byte    <= serial_latched[39:32];
+                            end
+                        end
+
+                        I_WRITE_2: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b1;
+                                send_byte    <= serial_latched[31:24];
+                            end
+                        end
+
+                        I_WRITE_3: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b1;
+                                send_byte    <= serial_latched[23:16];
+                            end
+                        end
+
+                        I_WRITE_4: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b1;
+                                send_byte    <= serial_latched[15:8];
+                            end
+                        end
+
+                        I_WRITE_5: begin
+                            if (!send_busy && !send_req) begin
+                                send_is_data <= 1'b1;
+                                send_byte    <= serial_latched[7:0];
+                            end
+                        end
+
+                        I_INTIALIZE_DONE: begin
+                            send_is_data <= 1'b1;
+                            send_byte    <= CHECK_DATA;
+                        end
+
+                    endcase
+        end
+    end
+endmodule
